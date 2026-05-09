@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Chinese Word Practice</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: sans-serif; background: #fdf6e3; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; }
+  h1 { font-size: 1.3rem; color: #555; margin-bottom: 20px; }
+
+  /* Scan screen */
+  #scan-screen { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
+  #preview { width: 100%; border-radius: 12px; display: none; }
+  #status { text-align: center; color: #888; font-size: 0.9rem; min-height: 1.2em; }
+  .btn { padding: 14px; border: none; border-radius: 12px; font-size: 1rem; cursor: pointer; width: 100%; }
+  .btn-primary { background: #e07b39; color: #fff; }
+  .btn-secondary { background: #ddd; color: #333; }
+  #file-input { display: none; }
+
+  /* Practice screen */
+  #practice-screen { display: none; width: 100%; max-width: 480px; flex-direction: column; align-items: center; gap: 20px; }
+  #progress { color: #aaa; font-size: 0.9rem; }
+  #word-box { font-size: 6rem; letter-spacing: 0.1em; min-height: 120px; display: flex; align-items: center; justify-content: center; color: #333; }
+  #word-box.hidden { visibility: hidden; }
+  .row { display: flex; gap: 12px; width: 100%; }
+  .row .btn { flex: 1; }
+  #speak-btn { background: #4a90d9; color: #fff; font-size: 1.1rem; }
+  #reveal-btn { background: #7cb87c; color: #fff; }
+  #prev-btn, #next-btn { background: #ddd; color: #333; }
+  #rescan-btn { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; text-decoration: underline; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>📖 Chinese Word Practice</h1>
+
+<!-- Scan Screen -->
+<div id="scan-screen">
+  <img id="preview" alt="preview">
+  <p id="status">Take a photo of the textbook page to begin.</p>
+  <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">📷 Take / Choose Photo</button>
+  <input type="file" id="file-input" accept="image/*" capture="environment">
+  <button class="btn btn-secondary" id="load-saved-btn" style="display:none">📂 Use Last Word List</button>
+</div>
+
+<!-- Practice Screen -->
+<div id="practice-screen">
+  <p id="progress"></p>
+  <div id="word-box" class="hidden">字</div>
+  <button class="btn" id="speak-btn" onclick="speak()">🔊 Play Word</button>
+  <div class="row">
+    <button class="btn" id="reveal-btn" onclick="reveal()">👁 Reveal</button>
+  </div>
+  <div class="row">
+    <button class="btn" id="prev-btn" onclick="go(-1)">◀ Prev</button>
+    <button class="btn" id="next-btn" onclick="go(1)">Next ▶</button>
+  </div>
+  <button id="rescan-btn" onclick="resetToScan()">↩ Scan new page</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script>
+  let words = [], idx = 0;
+
+  // Check for saved word list
+  const saved = localStorage.getItem('chineseWords');
+  if (saved) {
+    document.getElementById('load-saved-btn').style.display = 'block';
+    document.getElementById('load-saved-btn').onclick = () => startPractice(JSON.parse(saved));
+  }
+
+  document.getElementById('file-input').addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Show preview
+    const url = URL.createObjectURL(file);
+    const preview = document.getElementById('preview');
+    preview.src = url;
+    preview.style.display = 'block';
+
+    setStatus('Reading image… this may take 20–40 seconds ⏳');
+
+    try {
+      const result = await Tesseract.recognize(url, 'chi_sim+chi_tra', {
+        logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress * 100)}%`); }
+      });
+
+      // Extract unique Chinese characters/words (filter non-Chinese)
+      const text = result.data.text;
+      const extracted = [...new Set(
+        text.match(/[\u4e00-\u9fff]+/g) || []
+      )].filter(w => w.length >= 1);
+
+      if (extracted.length === 0) {
+        setStatus('No Chinese characters found. Try a clearer photo.');
+        return;
+      }
+
+      localStorage.setItem('chineseWords', JSON.stringify(extracted));
+      startPractice(extracted);
+    } catch (err) {
+      setStatus('Error reading image. Please try again.');
+      console.error(err);
+    }
+  });
+
+  function setStatus(msg) {
+    document.getElementById('status').textContent = msg;
+  }
+
+  function startPractice(list) {
+    words = list;
+    idx = 0;
+    document.getElementById('scan-screen').style.display = 'none';
+    document.getElementById('practice-screen').style.display = 'flex';
+    render();
+  }
+
+  function render() {
+    document.getElementById('progress').textContent = `${idx + 1} / ${words.length}`;
+    document.getElementById('word-box').textContent = words[idx];
+    document.getElementById('word-box').classList.add('hidden');
+  }
+
+  function reveal() {
+    document.getElementById('word-box').classList.remove('hidden');
+  }
+
+  function speak() {
+    const u = new SpeechSynthesisUtterance(words[idx]);
+    u.lang = 'zh-CN';
+    u.rate = 0.85;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(u);
+    reveal(); // also reveal when playing
+  }
+
+  function go(dir) {
+    idx = Math.max(0, Math.min(words.length - 1, idx + dir));
+    render();
+  }
+
+  function resetToScan() {
+    document.getElementById('practice-screen').style.display = 'none';
+    document.getElementById('scan-screen').style.display = 'flex';
+    document.getElementById('file-input').value = '';
+    document.getElementById('preview').style.display = 'none';
+    setStatus('Take a photo of the textbook page to begin.');
+  }
+</script>
+</body>
+</html>
