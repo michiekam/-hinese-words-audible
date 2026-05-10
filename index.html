@@ -6,29 +6,51 @@
 <title>Chinese Word Practice</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: sans-serif; background: #fdf6e3; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 24px 16px; }
-  h1 { font-size: 1.3rem; color: #555; margin-bottom: 20px; }
+  body { font-family: sans-serif; background: #fdf6e3; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px 16px; gap: 16px; }
+  h1 { font-size: 1.2rem; color: #555; }
 
-  /* Scan screen */
-  #scan-screen { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 12px; }
-  #preview { width: 100%; border-radius: 12px; display: none; }
+  .btn { padding: 13px 18px; border: none; border-radius: 10px; font-size: 1rem; cursor: pointer; }
+  .btn-primary { background: #e07b39; color: #fff; width: 100%; }
+  .btn-green { background: #5a9e5a; color: #fff; }
+  .btn-gray { background: #ddd; color: #333; }
+
+  /* Scan */
+  #scan-screen { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 12px; }
+  #preview { width: 100%; border-radius: 10px; display: none; }
   #status { text-align: center; color: #888; font-size: 0.9rem; min-height: 1.2em; }
-  .btn { padding: 14px; border: none; border-radius: 12px; font-size: 1rem; cursor: pointer; width: 100%; }
-  .btn-primary { background: #e07b39; color: #fff; }
-  .btn-secondary { background: #ddd; color: #333; }
   #file-input { display: none; }
 
-  /* Practice screen */
-  #practice-screen { display: none; width: 100%; max-width: 480px; flex-direction: column; align-items: center; gap: 20px; }
+  /* Review */
+  #review-screen { display: none; width: 100%; max-width: 600px; flex-direction: column; gap: 14px; }
+  #review-screen h2 { font-size: 1rem; color: #555; }
+  .lesson-block { background: #fff; border-radius: 10px; padding: 12px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .lesson-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .lesson-title { font-weight: bold; font-size: 0.95rem; color: #444; flex: 1; }
+  .lesson-title input { border: 1px solid #ccc; border-radius: 6px; padding: 3px 7px; font-size: 0.9rem; width: 100px; }
+  .words-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .word-chip { display: flex; align-items: center; gap: 4px; background: #f0e6d3; border-radius: 20px; padding: 6px 12px; font-size: 1.3rem; cursor: default; }
+  .word-chip .del { cursor: pointer; color: #aaa; font-size: 0.8rem; line-height: 1; }
+  .word-chip .del:hover { color: #e05555; }
+  .add-word-row { display: flex; gap: 8px; margin-top: 10px; }
+  .add-word-row input { flex: 1; border: 1px solid #ccc; border-radius: 8px; padding: 7px 10px; font-size: 1.1rem; }
+  .del-lesson { background: none; border: none; color: #ccc; font-size: 1.1rem; cursor: pointer; }
+  .del-lesson:hover { color: #e05555; }
+  #add-lesson-btn { background: none; border: 2px dashed #ccc; border-radius: 10px; padding: 10px; color: #aaa; font-size: 0.95rem; cursor: pointer; width: 100%; }
+  #add-lesson-btn:hover { border-color: #e07b39; color: #e07b39; }
+  #start-btn { background: #4a90d9; color: #fff; font-size: 1.1rem; padding: 15px; border-radius: 12px; border: none; cursor: pointer; width: 100%; }
+
+  /* Practice */
+  #practice-screen { display: none; width: 100%; max-width: 480px; flex-direction: column; align-items: center; gap: 18px; }
+  #lesson-tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  .tab { padding: 7px 14px; border-radius: 20px; border: 2px solid #ddd; background: #fff; font-size: 0.85rem; cursor: pointer; color: #666; }
+  .tab.active { border-color: #4a90d9; background: #4a90d9; color: #fff; }
   #progress { color: #aaa; font-size: 0.9rem; }
-  #word-box { font-size: 6rem; letter-spacing: 0.1em; min-height: 120px; display: flex; align-items: center; justify-content: center; color: #333; }
-  #word-box.hidden { visibility: hidden; }
-  .row { display: flex; gap: 12px; width: 100%; }
-  .row .btn { flex: 1; }
-  #speak-btn { background: #4a90d9; color: #fff; font-size: 1.1rem; }
-  #reveal-btn { background: #7cb87c; color: #fff; }
-  #prev-btn, #next-btn { background: #ddd; color: #333; }
-  #rescan-btn { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; text-decoration: underline; margin-top: 8px; }
+  #word-box { font-size: 6rem; min-height: 110px; display: flex; align-items: center; justify-content: center; color: #333; visibility: hidden; }
+  #speak-btn { background: #4a90d9; color: #fff; font-size: 1rem; width: 100%; padding: 15px; border-radius: 12px; border: none; cursor: pointer; }
+  .nav-row { display: flex; gap: 12px; width: 100%; }
+  .nav-row .btn { flex: 1; }
+  #reveal-btn { background: #7cb87c; color: #fff; width: 100%; }
+  #back-btn { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -40,114 +62,184 @@
   <p id="status">Take a photo of the textbook page to begin.</p>
   <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">📷 Take / Choose Photo</button>
   <input type="file" id="file-input" accept="image/*" capture="environment">
-  <button class="btn btn-secondary" id="load-saved-btn" style="display:none">📂 Use Last Word List</button>
+  <button class="btn btn-gray" id="load-saved-btn" style="display:none;width:100%" onclick="loadSaved()">📂 Use Last Word List</button>
+</div>
+
+<!-- Review Screen -->
+<div id="review-screen">
+  <h2>Review & Edit Words</h2>
+  <div id="lessons-container"></div>
+  <button id="add-lesson-btn" onclick="addLesson()">+ Add Lesson</button>
+  <button id="start-btn" onclick="startPractice()">▶ Start Practice</button>
 </div>
 
 <!-- Practice Screen -->
 <div id="practice-screen">
+  <div id="lesson-tabs"></div>
   <p id="progress"></p>
-  <div id="word-box" class="hidden">字</div>
-  <button class="btn" id="speak-btn" onclick="speak()">🔊 Play Word</button>
-  <div class="row">
-    <button class="btn" id="reveal-btn" onclick="reveal()">👁 Reveal</button>
+  <div id="word-box">字</div>
+  <button id="speak-btn" onclick="speak()">🔊 Play Word</button>
+  <button id="reveal-btn" class="btn" onclick="revealWord()">👁 Reveal</button>
+  <div class="nav-row">
+    <button class="btn btn-gray" onclick="go(-1)">◀ Prev</button>
+    <button class="btn btn-gray" onclick="go(1)">Next ▶</button>
   </div>
-  <div class="row">
-    <button class="btn" id="prev-btn" onclick="go(-1)">◀ Prev</button>
-    <button class="btn" id="next-btn" onclick="go(1)">Next ▶</button>
-  </div>
-  <button id="rescan-btn" onclick="resetToScan()">↩ Scan new page</button>
+  <button id="back-btn" onclick="showReview()">↩ Back to Edit</button>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
-  let words = [], idx = 0;
+// ── State ──────────────────────────────────────────────────────────────
+let lessons = []; // [{name, words:[]}]
+let practiceLesson = 0, practiceIdx = 0;
 
-  // Check for saved word list
-  const saved = localStorage.getItem('chineseWords');
-  if (saved) {
-    document.getElementById('load-saved-btn').style.display = 'block';
-    document.getElementById('load-saved-btn').onclick = () => startPractice(JSON.parse(saved));
+// ── Init ───────────────────────────────────────────────────────────────
+const saved = localStorage.getItem('chineseLessons');
+if (saved) {
+  document.getElementById('load-saved-btn').style.display = 'block';
+}
+
+function loadSaved() {
+  lessons = JSON.parse(localStorage.getItem('chineseLessons'));
+  showReview();
+}
+
+// ── Scan & OCR ─────────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const preview = document.getElementById('preview');
+  preview.src = url; preview.style.display = 'block';
+  setStatus('Reading image… 20–40 seconds ⏳');
+
+  try {
+    const result = await Tesseract.recognize(url, 'chi_sim+chi_tra', {
+      logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress*100)}%`); }
+    });
+
+    // Group words by x-position column
+    const words = result.data.words.filter(w => /[\u4e00-\u9fff]/.test(w.text));
+    if (!words.length) { setStatus('No Chinese characters found. Try a clearer photo.'); return; }
+
+    lessons = groupByColumn(words);
+    localStorage.setItem('chineseLessons', JSON.stringify(lessons));
+    showReview();
+  } catch(err) {
+    setStatus('Error: ' + err.message);
   }
+});
 
-  document.getElementById('file-input').addEventListener('change', async e => {
-    const file = e.target.files[0];
-    if (!file) return;
+function groupByColumn(words) {
+  // Sort by x, cluster into columns by gap
+  const sorted = [...words].sort((a,b) => a.bbox.x0 - b.bbox.x0);
+  const cols = [];
+  for (const w of sorted) {
+    const cx = (w.bbox.x0 + w.bbox.x1) / 2;
+    const col = cols.find(c => Math.abs(c.cx - cx) < 60);
+    if (col) { col.words.push(w); col.cx = (col.cx + cx) / 2; }
+    else cols.push({ cx, words: [w] });
+  }
+  // Sort each column top-to-bottom, dedupe
+  return cols.map((col, i) => ({
+    name: `Lesson ${i + 1}`,
+    words: [...new Set(col.words.sort((a,b) => a.bbox.y0 - b.bbox.y0).map(w => w.text.trim()).filter(Boolean))]
+  })).filter(c => c.words.length);
+}
 
-    // Show preview
-    const url = URL.createObjectURL(file);
-    const preview = document.getElementById('preview');
-    preview.src = url;
-    preview.style.display = 'block';
+function setStatus(msg) { document.getElementById('status').textContent = msg; }
 
-    setStatus('Reading image… this may take 20–40 seconds ⏳');
+// ── Review Screen ──────────────────────────────────────────────────────
+function showReview() {
+  document.getElementById('scan-screen').style.display = 'none';
+  document.getElementById('practice-screen').style.display = 'none';
+  document.getElementById('review-screen').style.display = 'flex';
+  renderLessons();
+}
 
-    try {
-      const result = await Tesseract.recognize(url, 'chi_sim+chi_tra', {
-        logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress * 100)}%`); }
-      });
-
-      // Extract unique Chinese characters/words (filter non-Chinese)
-      const text = result.data.text;
-      const extracted = [...new Set(
-        text.match(/[\u4e00-\u9fff]+/g) || []
-      )].filter(w => w.length >= 1);
-
-      if (extracted.length === 0) {
-        setStatus('No Chinese characters found. Try a clearer photo.');
-        return;
-      }
-
-      localStorage.setItem('chineseWords', JSON.stringify(extracted));
-      startPractice(extracted);
-    } catch (err) {
-      setStatus('Error reading image. Please try again.');
-      console.error(err);
-    }
+function renderLessons() {
+  const container = document.getElementById('lessons-container');
+  container.innerHTML = '';
+  lessons.forEach((lesson, li) => {
+    const block = document.createElement('div');
+    block.className = 'lesson-block';
+    block.innerHTML = `
+      <div class="lesson-header">
+        <span class="lesson-title"><input value="${lesson.name}" onchange="lessons[${li}].name=this.value"></span>
+        <button class="del-lesson" onclick="deleteLesson(${li})">🗑</button>
+      </div>
+      <div class="words-grid" id="grid-${li}"></div>
+      <div class="add-word-row">
+        <input placeholder="Add word…" id="add-input-${li}" onkeydown="if(event.key==='Enter')addWord(${li})">
+        <button class="btn btn-green" onclick="addWord(${li})">+</button>
+      </div>`;
+    container.appendChild(block);
+    const grid = document.getElementById(`grid-${li}`);
+    lesson.words.forEach((w, wi) => {
+      const chip = document.createElement('div');
+      chip.className = 'word-chip';
+      chip.innerHTML = `<span>${w}</span><span class="del" onclick="deleteWord(${li},${wi})">✕</span>`;
+      grid.appendChild(chip);
+    });
   });
+}
 
-  function setStatus(msg) {
-    document.getElementById('status').textContent = msg;
-  }
+function deleteWord(li, wi) { lessons[li].words.splice(wi, 1); save(); renderLessons(); }
+function deleteLesson(li) { lessons.splice(li, 1); save(); renderLessons(); }
+function addWord(li) {
+  const inp = document.getElementById(`add-input-${li}`);
+  const val = inp.value.trim();
+  if (val) { lessons[li].words.push(val); inp.value = ''; save(); renderLessons(); }
+}
+function addLesson() {
+  lessons.push({ name: `Lesson ${lessons.length + 1}`, words: [] });
+  save(); renderLessons();
+}
+function save() { localStorage.setItem('chineseLessons', JSON.stringify(lessons)); }
 
-  function startPractice(list) {
-    words = list;
-    idx = 0;
-    document.getElementById('scan-screen').style.display = 'none';
-    document.getElementById('practice-screen').style.display = 'flex';
-    render();
-  }
+// ── Practice Screen ────────────────────────────────────────────────────
+function startPractice() {
+  practiceLesson = 0; practiceIdx = 0;
+  document.getElementById('review-screen').style.display = 'none';
+  document.getElementById('practice-screen').style.display = 'flex';
+  renderTabs(); render();
+}
 
-  function render() {
-    document.getElementById('progress').textContent = `${idx + 1} / ${words.length}`;
-    document.getElementById('word-box').textContent = words[idx];
-    document.getElementById('word-box').classList.add('hidden');
-  }
+function renderTabs() {
+  const tabs = document.getElementById('lesson-tabs');
+  tabs.innerHTML = '';
+  lessons.forEach((l, i) => {
+    const t = document.createElement('button');
+    t.className = 'tab' + (i === practiceLesson ? ' active' : '');
+    t.textContent = l.name;
+    t.onclick = () => { practiceLesson = i; practiceIdx = 0; renderTabs(); render(); };
+    tabs.appendChild(t);
+  });
+}
 
-  function reveal() {
-    document.getElementById('word-box').classList.remove('hidden');
-  }
+function render() {
+  const words = lessons[practiceLesson].words;
+  document.getElementById('progress').textContent = `${practiceIdx + 1} / ${words.length}`;
+  document.getElementById('word-box').textContent = words[practiceIdx];
+  document.getElementById('word-box').style.visibility = 'hidden';
+}
 
-  function speak() {
-    const u = new SpeechSynthesisUtterance(words[idx]);
-    u.lang = 'zh-CN';
-    u.rate = 0.85;
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
-    reveal(); // also reveal when playing
-  }
+function revealWord() { document.getElementById('word-box').style.visibility = 'visible'; }
 
-  function go(dir) {
-    idx = Math.max(0, Math.min(words.length - 1, idx + dir));
-    render();
-  }
+function speak() {
+  const word = lessons[practiceLesson].words[practiceIdx];
+  const u = new SpeechSynthesisUtterance(word);
+  u.lang = 'zh-CN'; u.rate = 0.85;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
+  revealWord();
+}
 
-  function resetToScan() {
-    document.getElementById('practice-screen').style.display = 'none';
-    document.getElementById('scan-screen').style.display = 'flex';
-    document.getElementById('file-input').value = '';
-    document.getElementById('preview').style.display = 'none';
-    setStatus('Take a photo of the textbook page to begin.');
-  }
+function go(dir) {
+  const words = lessons[practiceLesson].words;
+  practiceIdx = Math.max(0, Math.min(words.length - 1, practiceIdx + dir));
+  render();
+}
 </script>
 </body>
 </html>
