@@ -70,6 +70,16 @@
   #hw-add { background: #5a9e5a; color: #fff; }
   #hw-cancel { background: #ddd; color: #333; }
   #hw-status { font-size: 0.8rem; color: #aaa; min-height: 1em; }
+
+  /* Collections */
+  #collections-screen { display: none; width: 100%; max-width: 500px; flex-direction: column; gap: 12px; }
+  .collection-row { display: flex; align-items: center; gap: 8px; background: #fff; border-radius: 10px; padding: 12px 14px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); cursor: pointer; }
+  .collection-row:hover { background: #fdf0e6; }
+  .collection-name { flex: 1; font-size: 1rem; color: #333; }
+  .collection-meta { font-size: 0.8rem; color: #aaa; }
+  .collection-del { background: none; border: none; color: #ccc; cursor: pointer; font-size: 1rem; }
+  .collection-del:hover { color: #e05555; }
+  #col-empty { color: #aaa; font-size: 0.9rem; text-align: center; padding: 20px 0; }
 </style>
 </head>
 <body>
@@ -84,15 +94,32 @@
   <button class="btn btn-gray" id="load-saved-btn" style="display:none;width:100%" onclick="loadSaved()">📂 Use Last Word List</button>
 </div>
 
+<!-- Collections Screen -->
+<div id="collections-screen">
+  <div style="display:flex;align-items:center;gap:10px">
+    <h2 style="font-size:1rem;color:#555;flex:1">📚 My Collections</h2>
+    <button class="btn btn-gray" style="padding:8px 14px;font-size:0.85rem" onclick="showScan()">✕ Close</button>
+  </div>
+  <div id="col-list"></div>
+  <p id="col-empty" style="display:none">No saved collections yet.</p>
+</div>
+
 <!-- Review Screen -->
 <div id="review-screen">
-  <h2>Review & Edit Words</h2>
+  <div style="display:flex;align-items:center;gap:8px">
+    <h2 style="font-size:1rem;color:#555;flex:1">Review & Edit Words</h2>
+    <button style="background:none;border:none;font-size:1.1rem;cursor:pointer" title="My Collections" onclick="showCollections()">📚</button>
+  </div>
   <div id="pool-block" style="display:none">
     <div style="font-size:0.85rem;color:#888;margin-bottom:6px">📋 Scanned words — drag into a lesson below</div>
     <div class="words-grid" id="pool-grid"></div>
   </div>
   <div id="lessons-container"></div>
   <button id="add-lesson-btn" onclick="addLesson()">+ Add Lesson</button>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-gray" style="flex:1" onclick="saveCollection()">💾 Save Collection</button>
+    <button class="btn btn-gray" style="flex:1" onclick="shareList()">🔗 Share Link</button>
+  </div>
   <button id="start-btn" onclick="startPractice()">▶ Start Practice</button>
 </div>
 
@@ -141,6 +168,17 @@ let hwTargetLesson = 0;
 // ── Init ───────────────────────────────────────────────────────────────
 const saved = localStorage.getItem('chineseLessons');
 if (saved) document.getElementById('load-saved-btn').style.display = 'block';
+
+function showScan() {
+  document.getElementById('collections-screen').style.display = 'none';
+  document.getElementById('review-screen').style.display = 'none';
+  document.getElementById('practice-screen').style.display = 'none';
+  document.getElementById('scan-screen').style.display = 'flex';
+}
+
+if (!tryLoadFromHash() && saved) {
+  document.getElementById('load-saved-btn').style.display = 'block';
+}
 
 function loadSaved() {
   const s = JSON.parse(localStorage.getItem('chineseLessons'));
@@ -319,10 +357,70 @@ function addWord(li) {
   const val = inp.value.trim();
   if (val) { lessons[li].words.push(val); inp.value = ''; save(); renderLessons(); }
 }
-function addLesson() { lessons.push({ name: `Lesson ${lessons.length + 1}`, words: [] }); save(); renderLessons(); }
-function save() { localStorage.setItem('chineseLessons', JSON.stringify(lessons)); }
+function addLesson() { lessons.push({ name: `Lesson ${lessons.length + 1}`, words: [] }); saveAll(); renderLessons(); }
 
-// ── Handwriting ────────────────────────────────────────────────────────
+// ── Collections ────────────────────────────────────────────────────────
+function getCollections() { return JSON.parse(localStorage.getItem('chineseCollections') || '[]'); }
+function setCollections(c) { localStorage.setItem('chineseCollections', JSON.stringify(c)); }
+
+function saveCollection() {
+  const name = prompt('Collection name (e.g. 6A):');
+  if (!name) return;
+  const cols = getCollections();
+  const idx = cols.findIndex(c => c.name === name);
+  const entry = { name, lessons, unassigned, saved: new Date().toLocaleDateString() };
+  if (idx >= 0) cols[idx] = entry; else cols.push(entry);
+  setCollections(cols);
+  alert(`Saved as "${name}"`);
+}
+
+function showCollections() {
+  document.getElementById('review-screen').style.display = 'none';
+  const screen = document.getElementById('collections-screen');
+  screen.style.display = 'flex';
+  const cols = getCollections();
+  const list = document.getElementById('col-list');
+  const empty = document.getElementById('col-empty');
+  list.innerHTML = '';
+  empty.style.display = cols.length ? 'none' : 'block';
+  cols.forEach((c, i) => {
+    const row = document.createElement('div');
+    row.className = 'collection-row';
+    const total = c.lessons.reduce((s, l) => s + l.words.length, 0);
+    row.innerHTML = `<span class="collection-name">${c.name}</span><span class="collection-meta">${total} words · ${c.saved}</span><button class="collection-del" onclick="deleteCollection(${i},event)">🗑</button>`;
+    row.addEventListener('click', () => loadCollection(i));
+    list.appendChild(row);
+  });
+}
+
+function loadCollection(i) {
+  const c = getCollections()[i];
+  lessons = c.lessons; unassigned = c.unassigned || [];
+  saveAll(); showReview();
+}
+
+function deleteCollection(i, e) {
+  e.stopPropagation();
+  const cols = getCollections(); cols.splice(i, 1); setCollections(cols); showCollections();
+}
+
+function shareList() {
+  const data = btoa(unescape(encodeURIComponent(JSON.stringify({ lessons, unassigned }))));
+  const url = location.href.split('#')[0] + '#' + data;
+  navigator.clipboard.writeText(url).then(() => alert('Link copied! Paste it on any device to load this word list.'))
+    .catch(() => prompt('Copy this link:', url));
+}
+
+// Load from URL hash on startup
+function tryLoadFromHash() {
+  const hash = location.hash.slice(1);
+  if (!hash) return false;
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(hash))));
+    lessons = data.lessons || []; unassigned = data.unassigned || [];
+    saveAll(); showReview(); return true;
+  } catch { return false; }
+}
 const hwCanvas = document.getElementById('hw-canvas');
 const hwCtx = hwCanvas.getContext('2d');
 let hwDrawing = false;
