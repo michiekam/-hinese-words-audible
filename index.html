@@ -131,20 +131,20 @@ document.getElementById('file-input').addEventListener('change', async e => {
 });
 
 function groupByColumn(words) {
-  // Sort by x, cluster into columns by gap
-  const sorted = [...words].sort((a,b) => a.bbox.x0 - b.bbox.x0);
-  const cols = [];
+  // Sort by y, cluster into rows by gap
+  const sorted = [...words].sort((a,b) => a.bbox.y0 - b.bbox.y0);
+  const rows = [];
   for (const w of sorted) {
-    const cx = (w.bbox.x0 + w.bbox.x1) / 2;
-    const col = cols.find(c => Math.abs(c.cx - cx) < 60);
-    if (col) { col.words.push(w); col.cx = (col.cx + cx) / 2; }
-    else cols.push({ cx, words: [w] });
+    const cy = (w.bbox.y0 + w.bbox.y1) / 2;
+    const row = rows.find(r => Math.abs(r.cy - cy) < 40);
+    if (row) { row.words.push(w); row.cy = (row.cy + cy) / 2; }
+    else rows.push({ cy, words: [w] });
   }
-  // Sort each column top-to-bottom, dedupe
-  return cols.map((col, i) => ({
+  // Sort each row left-to-right, dedupe
+  return rows.map((row, i) => ({
     name: `Lesson ${i + 1}`,
-    words: [...new Set(col.words.sort((a,b) => a.bbox.y0 - b.bbox.y0).map(w => w.text.trim()).filter(Boolean))]
-  })).filter(c => c.words.length);
+    words: [...new Set(row.words.sort((a,b) => a.bbox.x0 - b.bbox.x0).map(w => w.text.trim()).filter(Boolean))]
+  })).filter(r => r.words.length);
 }
 
 function setStatus(msg) { document.getElementById('status').textContent = msg; }
@@ -232,7 +232,6 @@ function speak() {
   u.lang = 'zh-CN'; u.rate = 0.85;
   speechSynthesis.cancel();
   speechSynthesis.speak(u);
-  revealWord();
 }
 
 function go(dir) {
