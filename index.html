@@ -149,10 +149,15 @@ document.getElementById('file-input').addEventListener('change', async e => {
   const url = URL.createObjectURL(file);
   const preview = document.getElementById('preview');
   preview.src = url; preview.style.display = 'block';
-  setStatus('Reading image… 20–40 seconds ⏳');
+  setStatus('Preparing image…');
+
   try {
-    const result = await Tesseract.recognize(url, 'chi_sim+chi_tra', {
-      logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress*100)}%`); }
+    const processedUrl = await preprocessImage(url);
+    setStatus('Reading image… this takes ~30 seconds ⏳');
+    const result = await Tesseract.recognize(processedUrl, 'chi_sim+chi_tra', {
+      logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress*100)}%`); },
+      tessedit_pageseg_mode: '6',        // assume uniform block of text
+      preserve_interword_spaces: '1',
     });
     const words = result.data.words.filter(w => /[\u4e00-\u9fff]/.test(w.text));
     if (!words.length) { setStatus('No Chinese characters found. Try a clearer photo.'); return; }
@@ -161,12 +166,44 @@ document.getElementById('file-input').addEventListener('change', async e => {
   } catch(err) { setStatus('Error: ' + err.message); }
 });
 
+function preprocessImage(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      // Scale up small images for better OCR
+      const scale = Math.max(1, 1800 / Math.max(img.width, img.height));
+      const w = img.width * scale, h = img.height * scale;
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      // Greyscale + contrast boost
+      const id = ctx.getImageData(0, 0, w, h);
+      const d = id.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const grey = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        // increase contrast: push towards black or white
+        const c = grey < 128 ? Math.max(0, grey - 40) : Math.min(255, grey + 40);
+        d[i] = d[i+1] = d[i+2] = c;
+      }
+      ctx.putImageData(id, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.src = url;
+  });
+}
+
 function groupByColumn(words) {
   const sorted = [...words].sort((a,b) => a.bbox.y0 - b.bbox.y0);
+  // Use median character height as dynamic row-gap threshold
+  const heights = sorted.map(w => w.bbox.y1 - w.bbox.y0).sort((a,b) => a-b);
+  const medH = heights[Math.floor(heights.length / 2)] || 40;
+  const threshold = medH * 0.6;
+
   const rows = [];
   for (const w of sorted) {
     const cy = (w.bbox.y0 + w.bbox.y1) / 2;
-    const row = rows.find(r => Math.abs(r.cy - cy) < 40);
+    const row = rows.find(r => Math.abs(r.cy - cy) < threshold);
     if (row) { row.words.push(w); row.cy = (row.cy + cy) / 2; }
     else rows.push({ cy, words: [w] });
   }
@@ -207,13 +244,13 @@ function renderLessons() {
 
     const grid = document.getElementById(`grid-${li}`);
 
-    // Grid is a drop zone for cross-lesson drops onto empty space
+    // Grid is a drop zone for cross-lesson drops
     grid.addEventListener('dragover', e => { e.preventDefault(); grid.classList.add('drop-target'); });
-    grid.addEventListener('dragleave', () => grid.classList.remove('drop-target'));
+    grid.addEventListener('dragleave', e => { if (!grid.contains(e.relatedTarget)) grid.classList.remove('drop-target'); });
     grid.addEventListener('drop', e => {
       e.preventDefault(); grid.classList.remove('drop-target');
       const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
-      if (fromLi === li) return; // handled by chip drop
+      if (fromLi === li) return;
       const [word] = lessons[fromLi].words.splice(fromWi, 1);
       lessons[li].words.push(word);
       save(); renderLessons();
@@ -227,8 +264,8 @@ function renderLessons() {
       chip.innerHTML = `<span>${w}</span><span class="del" onclick="deleteWord(${li},${wi})">✕</span>`;
       chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', `${li},${wi}`); chip.classList.add('dragging'); });
       chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
-      chip.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); chip.classList.add('drag-over'); });
-      chip.addEventListener('dragleave', () => chip.classList.remove('drag-over'));
+      chip.addEventListener('dragover', e => { e.preventDefault(); chip.classList.add('drag-over'); });
+      chip.addEventListener('dragleave', e => { if (!chip.contains(e.relatedTarget)) chip.classList.remove('drag-over'); });
       chip.addEventListener('drop', e => {
         e.preventDefault(); e.stopPropagation(); chip.classList.remove('drag-over');
         const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
