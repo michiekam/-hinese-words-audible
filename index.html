@@ -27,7 +27,8 @@
   .lesson-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
   .lesson-title { font-weight: bold; font-size: 0.95rem; color: #444; flex: 1; }
   .lesson-title input { border: 1px solid #ccc; border-radius: 6px; padding: 3px 7px; font-size: 0.9rem; width: 100px; }
-  .words-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .words-grid { display: flex; flex-wrap: wrap; gap: 8px; min-height: 36px; border-radius: 8px; padding: 4px; transition: background 0.15s; }
+  .words-grid.drop-target { background: #fde8d4; outline: 2px dashed #e07b39; }
   .word-chip { display: flex; align-items: center; gap: 4px; background: #f0e6d3; border-radius: 20px; padding: 6px 12px; font-size: 1.3rem; cursor: grab; user-select: none; }
   .word-chip.dragging { opacity: 0.4; cursor: grabbing; }
   .word-chip.drag-over { outline: 2px dashed #e07b39; }
@@ -47,12 +48,28 @@
   .tab { padding: 7px 14px; border-radius: 20px; border: 2px solid #ddd; background: #fff; font-size: 0.85rem; cursor: pointer; color: #666; }
   .tab.active { border-color: #4a90d9; background: #4a90d9; color: #fff; }
   #progress { color: #aaa; font-size: 0.9rem; }
-  #word-box { font-size: 6rem; min-height: 110px; display: flex; align-items: center; justify-content: center; color: #333; visibility: hidden; }
+  #word-box { font-size: 6rem; min-height: 110px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #333; visibility: hidden; }
+  #pinyin-box { font-size: 1.3rem; color: #e07b39; letter-spacing: 0.15em; min-height: 1.6em; }
   #speak-btn { background: #4a90d9; color: #fff; font-size: 1rem; width: 100%; padding: 15px; border-radius: 12px; border: none; cursor: pointer; }
   .nav-row { display: flex; gap: 12px; width: 100%; }
   .nav-row .btn { flex: 1; }
   #reveal-btn { background: #7cb87c; color: #fff; width: 100%; }
   #back-btn { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; text-decoration: underline; }
+
+  /* Handwriting modal */
+  #hw-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+  #hw-modal.open { display: flex; }
+  #hw-box { background: #fff; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; align-items: center; width: 300px; }
+  #hw-box h3 { font-size: 1rem; color: #555; }
+  #hw-canvas { border: 2px solid #ccc; border-radius: 8px; touch-action: none; cursor: crosshair; background: #fff; }
+  #hw-result { font-size: 2rem; min-height: 2.5rem; color: #333; }
+  .hw-row { display: flex; gap: 8px; width: 100%; }
+  .hw-row button { flex: 1; padding: 10px; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
+  #hw-clear { background: #eee; color: #555; }
+  #hw-recognize { background: #e07b39; color: #fff; }
+  #hw-add { background: #5a9e5a; color: #fff; }
+  #hw-cancel { background: #ddd; color: #333; }
+  #hw-status { font-size: 0.8rem; color: #aaa; min-height: 1em; }
 </style>
 </head>
 <body>
@@ -80,6 +97,7 @@
   <div id="lesson-tabs"></div>
   <p id="progress"></p>
   <div id="word-box">字</div>
+  <div id="pinyin-box"></div>
   <button id="speak-btn" onclick="speak()">🔊 Play Word</button>
   <button id="reveal-btn" class="btn" onclick="revealWord()">👁 Reveal</button>
   <div class="nav-row">
@@ -89,17 +107,35 @@
   <button id="back-btn" onclick="showReview()">↩ Back to Edit</button>
 </div>
 
+<!-- Handwriting Modal -->
+<div id="hw-modal">
+  <div id="hw-box">
+    <h3>✍️ Draw a character</h3>
+    <canvas id="hw-canvas" width="240" height="240"></canvas>
+    <p id="hw-status"></p>
+    <div id="hw-result"></div>
+    <div class="hw-row">
+      <button id="hw-clear" onclick="hwClear()">Clear</button>
+      <button id="hw-recognize" onclick="hwRecognize()">Read ✨</button>
+    </div>
+    <div class="hw-row">
+      <button id="hw-add" onclick="hwAdd()">Add to Lesson</button>
+      <button id="hw-cancel" onclick="hwClose()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://unpkg.com/pinyin-pro@3/dist/index.js"></script>
 <script>
 // ── State ──────────────────────────────────────────────────────────────
-let lessons = []; // [{name, words:[]}]
+let lessons = [];
 let practiceLesson = 0, practiceIdx = 0;
+let hwTargetLesson = 0;
 
 // ── Init ───────────────────────────────────────────────────────────────
 const saved = localStorage.getItem('chineseLessons');
-if (saved) {
-  document.getElementById('load-saved-btn').style.display = 'block';
-}
+if (saved) document.getElementById('load-saved-btn').style.display = 'block';
 
 function loadSaved() {
   lessons = JSON.parse(localStorage.getItem('chineseLessons'));
@@ -114,26 +150,18 @@ document.getElementById('file-input').addEventListener('change', async e => {
   const preview = document.getElementById('preview');
   preview.src = url; preview.style.display = 'block';
   setStatus('Reading image… 20–40 seconds ⏳');
-
   try {
     const result = await Tesseract.recognize(url, 'chi_sim+chi_tra', {
       logger: m => { if (m.status === 'recognizing text') setStatus(`Reading… ${Math.round(m.progress*100)}%`); }
     });
-
-    // Group words by x-position column
     const words = result.data.words.filter(w => /[\u4e00-\u9fff]/.test(w.text));
     if (!words.length) { setStatus('No Chinese characters found. Try a clearer photo.'); return; }
-
     lessons = groupByColumn(words);
-    localStorage.setItem('chineseLessons', JSON.stringify(lessons));
-    showReview();
-  } catch(err) {
-    setStatus('Error: ' + err.message);
-  }
+    save(); showReview();
+  } catch(err) { setStatus('Error: ' + err.message); }
 });
 
 function groupByColumn(words) {
-  // Sort by y, cluster into rows by gap
   const sorted = [...words].sort((a,b) => a.bbox.y0 - b.bbox.y0);
   const rows = [];
   for (const w of sorted) {
@@ -142,7 +170,6 @@ function groupByColumn(words) {
     if (row) { row.words.push(w); row.cy = (row.cy + cy) / 2; }
     else rows.push({ cy, words: [w] });
   }
-  // Sort each row left-to-right, dedupe
   return rows.map((row, i) => ({
     name: `Lesson ${i + 1}`,
     words: [...new Set(row.words.sort((a,b) => a.bbox.x0 - b.bbox.x0).map(w => w.text.trim()).filter(Boolean))]
@@ -168,6 +195,7 @@ function renderLessons() {
     block.innerHTML = `
       <div class="lesson-header">
         <span class="lesson-title"><input value="${lesson.name}" onchange="lessons[${li}].name=this.value"></span>
+        <button style="background:none;border:none;font-size:1.1rem;cursor:pointer" title="Draw to add" onclick="hwOpen(${li})">✍️</button>
         <button class="del-lesson" onclick="deleteLesson(${li})">🗑</button>
       </div>
       <div class="words-grid" id="grid-${li}"></div>
@@ -176,7 +204,21 @@ function renderLessons() {
         <button class="btn btn-green" onclick="addWord(${li})">+</button>
       </div>`;
     container.appendChild(block);
+
     const grid = document.getElementById(`grid-${li}`);
+
+    // Grid is a drop zone for cross-lesson drops onto empty space
+    grid.addEventListener('dragover', e => { e.preventDefault(); grid.classList.add('drop-target'); });
+    grid.addEventListener('dragleave', () => grid.classList.remove('drop-target'));
+    grid.addEventListener('drop', e => {
+      e.preventDefault(); grid.classList.remove('drop-target');
+      const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
+      if (fromLi === li) return; // handled by chip drop
+      const [word] = lessons[fromLi].words.splice(fromWi, 1);
+      lessons[li].words.push(word);
+      save(); renderLessons();
+    });
+
     lesson.words.forEach((w, wi) => {
       const chip = document.createElement('div');
       chip.className = 'word-chip';
@@ -185,14 +227,15 @@ function renderLessons() {
       chip.innerHTML = `<span>${w}</span><span class="del" onclick="deleteWord(${li},${wi})">✕</span>`;
       chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', `${li},${wi}`); chip.classList.add('dragging'); });
       chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
-      chip.addEventListener('dragover', e => { e.preventDefault(); chip.classList.add('drag-over'); });
+      chip.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); chip.classList.add('drag-over'); });
       chip.addEventListener('dragleave', () => chip.classList.remove('drag-over'));
       chip.addEventListener('drop', e => {
-        e.preventDefault(); chip.classList.remove('drag-over');
+        e.preventDefault(); e.stopPropagation(); chip.classList.remove('drag-over');
         const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
         const toLi = +chip.dataset.li, toWi = +chip.dataset.wi;
-        if (fromLi !== toLi || fromWi === toWi) return;
+        if (fromLi === toLi && fromWi === toWi) return;
         const [word] = lessons[fromLi].words.splice(fromWi, 1);
+        // If cross-lesson, insert at target position; same-lesson reorder
         lessons[toLi].words.splice(toWi, 0, word);
         save(); renderLessons();
       });
@@ -208,11 +251,61 @@ function addWord(li) {
   const val = inp.value.trim();
   if (val) { lessons[li].words.push(val); inp.value = ''; save(); renderLessons(); }
 }
-function addLesson() {
-  lessons.push({ name: `Lesson ${lessons.length + 1}`, words: [] });
-  save(); renderLessons();
-}
+function addLesson() { lessons.push({ name: `Lesson ${lessons.length + 1}`, words: [] }); save(); renderLessons(); }
 function save() { localStorage.setItem('chineseLessons', JSON.stringify(lessons)); }
+
+// ── Handwriting ────────────────────────────────────────────────────────
+const hwCanvas = document.getElementById('hw-canvas');
+const hwCtx = hwCanvas.getContext('2d');
+let hwDrawing = false;
+
+function hwOpen(li) {
+  hwTargetLesson = li;
+  hwClear();
+  document.getElementById('hw-result').textContent = '';
+  document.getElementById('hw-status').textContent = '';
+  document.getElementById('hw-modal').classList.add('open');
+}
+function hwClose() { document.getElementById('hw-modal').classList.remove('open'); }
+
+function hwClear() {
+  hwCtx.clearRect(0, 0, hwCanvas.width, hwCanvas.height);
+  document.getElementById('hw-result').textContent = '';
+  document.getElementById('hw-status').textContent = '';
+}
+
+function hwPos(e) {
+  const r = hwCanvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  return [src.clientX - r.left, src.clientY - r.top];
+}
+
+hwCanvas.addEventListener('mousedown', e => { hwDrawing = true; hwCtx.beginPath(); hwCtx.moveTo(...hwPos(e)); });
+hwCanvas.addEventListener('mousemove', e => { if (!hwDrawing) return; hwCtx.lineWidth = 6; hwCtx.lineCap = 'round'; hwCtx.strokeStyle = '#222'; hwCtx.lineTo(...hwPos(e)); hwCtx.stroke(); });
+hwCanvas.addEventListener('mouseup', () => hwDrawing = false);
+hwCanvas.addEventListener('touchstart', e => { e.preventDefault(); hwDrawing = true; hwCtx.beginPath(); hwCtx.moveTo(...hwPos(e)); }, { passive: false });
+hwCanvas.addEventListener('touchmove', e => { e.preventDefault(); if (!hwDrawing) return; hwCtx.lineWidth = 6; hwCtx.lineCap = 'round'; hwCtx.strokeStyle = '#222'; hwCtx.lineTo(...hwPos(e)); hwCtx.stroke(); }, { passive: false });
+hwCanvas.addEventListener('touchend', () => hwDrawing = false);
+
+async function hwRecognize() {
+  document.getElementById('hw-status').textContent = 'Reading…';
+  document.getElementById('hw-result').textContent = '';
+  try {
+    const result = await Tesseract.recognize(hwCanvas, 'chi_sim+chi_tra');
+    const text = result.data.text.replace(/\s/g, '').replace(/[^\u4e00-\u9fff]/g, '');
+    document.getElementById('hw-result').textContent = text || '?';
+    document.getElementById('hw-status').textContent = text ? 'Tap "Add to Lesson" to confirm' : 'Not recognised — try again';
+  } catch(e) {
+    document.getElementById('hw-status').textContent = 'Error: ' + e.message;
+  }
+}
+
+function hwAdd() {
+  const text = document.getElementById('hw-result').textContent;
+  if (!text || text === '?') return;
+  [...text].forEach(ch => { if (!lessons[hwTargetLesson].words.includes(ch)) lessons[hwTargetLesson].words.push(ch); });
+  save(); renderLessons(); hwClose();
+}
 
 // ── Practice Screen ────────────────────────────────────────────────────
 function startPractice() {
@@ -239,16 +332,20 @@ function render() {
   document.getElementById('progress').textContent = `${practiceIdx + 1} / ${words.length}`;
   document.getElementById('word-box').textContent = words[practiceIdx];
   document.getElementById('word-box').style.visibility = 'hidden';
+  document.getElementById('pinyin-box').textContent = '';
 }
 
-function revealWord() { document.getElementById('word-box').style.visibility = 'visible'; }
+function revealWord() {
+  const word = lessons[practiceLesson].words[practiceIdx];
+  document.getElementById('word-box').style.visibility = 'visible';
+  document.getElementById('pinyin-box').textContent = pinyinPro.pinyin(word, { toneType: 'symbol', separator: ' ' });
+}
 
 function speak() {
   const word = lessons[practiceLesson].words[practiceIdx];
   const u = new SpeechSynthesisUtterance(word);
   u.lang = 'zh-CN'; u.rate = 0.85;
-  speechSynthesis.cancel();
-  speechSynthesis.speak(u);
+  speechSynthesis.cancel(); speechSynthesis.speak(u);
 }
 
 function go(dir) {
