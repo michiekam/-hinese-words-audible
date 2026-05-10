@@ -87,6 +87,10 @@
 <!-- Review Screen -->
 <div id="review-screen">
   <h2>Review & Edit Words</h2>
+  <div id="pool-block" style="display:none">
+    <div style="font-size:0.85rem;color:#888;margin-bottom:6px">📋 Scanned words — drag into a lesson below</div>
+    <div class="words-grid" id="pool-grid"></div>
+  </div>
   <div id="lessons-container"></div>
   <button id="add-lesson-btn" onclick="addLesson()">+ Add Lesson</button>
   <button id="start-btn" onclick="startPractice()">▶ Start Practice</button>
@@ -130,6 +134,7 @@
 <script>
 // ── State ──────────────────────────────────────────────────────────────
 let lessons = [];
+let unassigned = [];
 let practiceLesson = 0, practiceIdx = 0;
 let hwTargetLesson = 0;
 
@@ -138,9 +143,17 @@ const saved = localStorage.getItem('chineseLessons');
 if (saved) document.getElementById('load-saved-btn').style.display = 'block';
 
 function loadSaved() {
-  lessons = JSON.parse(localStorage.getItem('chineseLessons'));
+  const s = JSON.parse(localStorage.getItem('chineseLessons'));
+  lessons = s.lessons || s; // backwards compat
+  unassigned = s.unassigned || [];
   showReview();
 }
+
+function saveAll() {
+  localStorage.setItem('chineseLessons', JSON.stringify({ lessons, unassigned }));
+  document.getElementById('load-saved-btn').style.display = 'block';
+}
+function save() { saveAll(); }
 
 // ── Scan & OCR ─────────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', async e => {
@@ -161,8 +174,12 @@ document.getElementById('file-input').addEventListener('change', async e => {
     });
     const words = result.data.words.filter(w => /[\u4e00-\u9fff]/.test(w.text));
     if (!words.length) { setStatus('No Chinese characters found. Try a clearer photo.'); return; }
-    lessons = groupByColumn(words);
-    save(); showReview();
+    // All scanned words go into a single unassigned pool
+    const allWords = [...new Set(words.map(w => w.text.trim()).filter(Boolean))];
+    // Keep existing lessons, reset the pool
+    unassigned = allWords;
+    if (!lessons.length) lessons = [{ name: 'Lesson 1', words: [] }];
+    saveAll(); showReview();
   } catch(err) { setStatus('Error: ' + err.message); }
 });
 
@@ -193,26 +210,6 @@ function preprocessImage(url) {
   });
 }
 
-function groupByColumn(words) {
-  const sorted = [...words].sort((a,b) => a.bbox.y0 - b.bbox.y0);
-  // Use median character height as dynamic row-gap threshold
-  const heights = sorted.map(w => w.bbox.y1 - w.bbox.y0).sort((a,b) => a-b);
-  const medH = heights[Math.floor(heights.length / 2)] || 40;
-  const threshold = medH * 0.6;
-
-  const rows = [];
-  for (const w of sorted) {
-    const cy = (w.bbox.y0 + w.bbox.y1) / 2;
-    const row = rows.find(r => Math.abs(r.cy - cy) < threshold);
-    if (row) { row.words.push(w); row.cy = (row.cy + cy) / 2; }
-    else rows.push({ cy, words: [w] });
-  }
-  return rows.map((row, i) => ({
-    name: `Lesson ${i + 1}`,
-    words: [...new Set(row.words.sort((a,b) => a.bbox.x0 - b.bbox.x0).map(w => w.text.trim()).filter(Boolean))]
-  })).filter(r => r.words.length);
-}
-
 function setStatus(msg) { document.getElementById('status').textContent = msg; }
 
 // ── Review Screen ──────────────────────────────────────────────────────
@@ -220,8 +217,29 @@ function showReview() {
   document.getElementById('scan-screen').style.display = 'none';
   document.getElementById('practice-screen').style.display = 'none';
   document.getElementById('review-screen').style.display = 'flex';
+  renderPool();
   renderLessons();
 }
+
+function renderPool() {
+  const block = document.getElementById('pool-block');
+  const grid = document.getElementById('pool-grid');
+  grid.innerHTML = '';
+  if (!unassigned.length) { block.style.display = 'none'; return; }
+  block.style.display = 'block';
+  unassigned.forEach((w, wi) => {
+    const chip = document.createElement('div');
+    chip.className = 'word-chip';
+    chip.draggable = true;
+    chip.dataset.src = 'pool'; chip.dataset.wi = wi;
+    chip.innerHTML = `<span>${w}</span><span class="del" onclick="deleteFromPool(${wi})">✕</span>`;
+    chip.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', `pool,${wi}`); chip.classList.add('dragging'); });
+    chip.addEventListener('dragend', () => chip.classList.remove('dragging'));
+    grid.appendChild(chip);
+  });
+}
+
+function deleteFromPool(wi) { unassigned.splice(wi, 1); saveAll(); renderPool(); }
 
 function renderLessons() {
   const container = document.getElementById('lessons-container');
@@ -249,11 +267,18 @@ function renderLessons() {
     grid.addEventListener('dragleave', e => { if (!grid.contains(e.relatedTarget)) grid.classList.remove('drop-target'); });
     grid.addEventListener('drop', e => {
       e.preventDefault(); grid.classList.remove('drop-target');
-      const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
-      if (fromLi === li) return;
-      const [word] = lessons[fromLi].words.splice(fromWi, 1);
-      lessons[li].words.push(word);
-      save(); renderLessons();
+      const [src, wi] = e.dataTransfer.getData('text/plain').split(',');
+      const fromWi = +wi;
+      if (src === 'pool') {
+        const [word] = unassigned.splice(fromWi, 1);
+        lessons[li].words.push(word);
+      } else {
+        const fromLi = +src;
+        if (fromLi === li) return;
+        const [word] = lessons[fromLi].words.splice(fromWi, 1);
+        lessons[li].words.push(word);
+      }
+      saveAll(); renderPool(); renderLessons();
     });
 
     lesson.words.forEach((w, wi) => {
@@ -268,13 +293,19 @@ function renderLessons() {
       chip.addEventListener('dragleave', e => { if (!chip.contains(e.relatedTarget)) chip.classList.remove('drag-over'); });
       chip.addEventListener('drop', e => {
         e.preventDefault(); e.stopPropagation(); chip.classList.remove('drag-over');
-        const [fromLi, fromWi] = e.dataTransfer.getData('text/plain').split(',').map(Number);
+        const [src, wi] = e.dataTransfer.getData('text/plain').split(',');
+        const fromWi = +wi;
         const toLi = +chip.dataset.li, toWi = +chip.dataset.wi;
-        if (fromLi === toLi && fromWi === toWi) return;
-        const [word] = lessons[fromLi].words.splice(fromWi, 1);
-        // If cross-lesson, insert at target position; same-lesson reorder
+        let word;
+        if (src === 'pool') {
+          [word] = unassigned.splice(fromWi, 1);
+        } else {
+          const fromLi = +src;
+          if (fromLi === toLi && fromWi === toWi) return;
+          [word] = lessons[fromLi].words.splice(fromWi, 1);
+        }
         lessons[toLi].words.splice(toWi, 0, word);
-        save(); renderLessons();
+        saveAll(); renderPool(); renderLessons();
       });
       grid.appendChild(chip);
     });
